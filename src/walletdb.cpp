@@ -5,15 +5,16 @@
 
 #include "walletdb.h"
 #include "wallet.h"
+#include "init.h"
 #include <boost/version.hpp>
 #include <boost/filesystem.hpp>
+#include <fstream>
 
 using namespace std;
 using namespace boost;
 
 static uint64_t nAccountingEntryNumber = 0;
 extern bool fWalletUnlockStakingOnly;
-extern bool BackupConfigFile(const string& strDest);
 
 //
 // CWalletDB
@@ -60,7 +61,7 @@ int64_t CWalletDB::GetAccountCreditDebit(const string& strAccount)
     ListAccountCreditDebit(strAccount, entries);
 
     int64_t nCreditDebit = 0;
-    BOOST_FOREACH (const CAccountingEntry& entry, entries)
+    for (auto const& entry : entries)
         nCreditDebit += entry.nCreditDebit;
 
     return nCreditDebit;
@@ -129,7 +130,7 @@ CWalletDB::ReorderTransactions(CWallet* pwallet)
     }
     list<CAccountingEntry> acentries;
     ListAccountCreditDebit("", acentries);
-    BOOST_FOREACH(CAccountingEntry& entry, acentries)
+    for (auto &entry : acentries)
     {
         txByTime.insert(make_pair(entry.nTime, TxPair((CWalletTx*)0, &entry)));
     }
@@ -156,7 +157,7 @@ CWalletDB::ReorderTransactions(CWallet* pwallet)
         else
         {
             int64_t nOrderPosOff = 0;
-            BOOST_FOREACH(const int64_t& nOffsetStart, nOrderPosOffsets)
+            for (auto const& nOffsetStart : nOrderPosOffsets)
             {
                 if (nOrderPos >= nOffsetStart)
                     ++nOrderPosOff;
@@ -514,7 +515,7 @@ DBErrors CWalletDB::LoadWallet(CWallet* pwallet)
         pwallet->nTimeFirstKey = 1; // 0 would be considered 'no value'
 
 
-    BOOST_FOREACH(uint256 hash, wss.vWalletUpgrade)
+    for (auto const& hash : wss.vWalletUpgrade)
         WriteTx(hash, pwallet->mapWallet[hash]);
 
     // Rewrite encrypted wallets of versions 0.4.0 and 0.5.0rc:
@@ -607,7 +608,7 @@ DBErrors CWalletDB::ZapWalletTx(CWallet* pwallet, vector<CWalletTx>& vWtx)
         return err;
 
     // erase each wallet TX
-    BOOST_FOREACH (uint256& hash, vTxHash) {
+    for (auto const& hash : vTxHash) {
         if (!EraseTx(hash))
             return DB_CORRUPT;
     }
@@ -679,72 +680,6 @@ void ThreadFlushWalletDB(void* parg)
     }
 }
 
-
-bool BackupConfigFile(const string& strDest)
-{
-      filesystem::path pathSrc = GetDataDir() / "gridcoinresearch.conf";
-      filesystem::path pathDest(strDest);
-      if (filesystem::is_directory(pathDest))
-                    pathDest /= "gridcoinresearch.conf";
-      try 
-      {
-            #if BOOST_VERSION >= 104000
-                    filesystem::copy_file(pathSrc, pathDest, filesystem::copy_option::overwrite_if_exists);
-            #else
-                    filesystem::copy_file(pathSrc, pathDest);
-            #endif
-                    printf("copied gridcoinresearch.conf to %s\n", pathDest.string().c_str());
-                    return true;
-       }
-       catch(const filesystem::filesystem_error &e) 
-       {
-                    printf("error copying gridcoinresearch.conf to %s - %s\n", pathDest.string().c_str(), e.what());
-                    return false;
-       }
-       return false;
-}
-
-
-bool BackupWallet(const CWallet& wallet, const string& strDest)
-{
-    if (!wallet.fFileBacked)
-        return false;
-    while (!fShutdown)
-    {
-        {
-            LOCK(bitdb.cs_db);
-            if (!bitdb.mapFileUseCount.count(wallet.strWalletFile) || bitdb.mapFileUseCount[wallet.strWalletFile] == 0)
-            {
-                // Flush log data to the dat file
-                bitdb.CloseDb(wallet.strWalletFile);
-                bitdb.CheckpointLSN(wallet.strWalletFile);
-                bitdb.mapFileUseCount.erase(wallet.strWalletFile);
-
-                // Copy wallet.dat
-                filesystem::path pathSrc = GetDataDir() / wallet.strWalletFile;
-                filesystem::path pathDest(strDest);
-                if (filesystem::is_directory(pathDest))
-                    pathDest /= wallet.strWalletFile;
-
-                try {
-#if BOOST_VERSION >= 104000
-                    filesystem::copy_file(pathSrc, pathDest, filesystem::copy_option::overwrite_if_exists);
-#else
-                    filesystem::copy_file(pathSrc, pathDest);
-#endif
-                    printf("copied wallet.dat to %s\n", pathDest.string().c_str());
-                    return true;
-                } catch(const filesystem::filesystem_error &e) {
-                    printf("error copying wallet.dat to %s - %s\n", pathDest.string().c_str(), e.what());
-                    return false;
-                }
-            }
-        }
-        MilliSleep(100);
-    }
-    return false;
-}
-
 //
 // Try to (very carefully!) recover wallet.dat if there is a problem.
 //
@@ -797,7 +732,7 @@ bool CWalletDB::Recover(CDBEnv& dbenv, std::string filename, bool fOnlyKeys)
     CWalletScanState wss;
 
     DbTxn* ptxn = dbenv.TxnBegin();
-    BOOST_FOREACH(CDBEnv::KeyValPair& row, salvagedData)
+    for (auto &row : salvagedData)
     {
         if (fOnlyKeys)
         {

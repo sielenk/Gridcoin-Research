@@ -28,11 +28,10 @@ namespace boost {
 #include <boost/program_options/parsers.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
-#include <boost/foreach.hpp>
 #include <boost/thread.hpp>
 #include <openssl/crypto.h>
 #include <openssl/rand.h>
-#include <stdarg.h>
+#include <cstdarg>
 
 #ifdef WIN32
 #ifdef _MSC_VER
@@ -82,7 +81,7 @@ bool fNoListen = false;
 bool fLogTimestamps = false;
 CMedianFilter<int64_t> vTimeOffsets(200,0);
 bool fReopenDebugLog = false;
-extern std::string GetNeuralVersion();
+std::string GetNeuralVersion();
 
 
 int64_t IsNeural();
@@ -489,7 +488,7 @@ static const signed char phexdigit[256] =
 
 bool IsHex(const string& str)
 {
-    BOOST_FOREACH(unsigned char c, str)
+    for (unsigned char c : str)
     {
         if (phexdigit[c] < 0)
             return false;
@@ -565,7 +564,7 @@ void ParseParameters(int argc, const char* const argv[])
     }
 
     // New 0.6 features:
-    BOOST_FOREACH(const PAIRTYPE(string,string)& entry, mapArgs)
+    for (auto const& entry : mapArgs)
     {
         string name = entry.first;
 
@@ -1382,7 +1381,7 @@ void AddTimeData(const CNetAddr& ip, int64_t nTime)
             {
                 // If nobody has a time different than ours but within 5 minutes of ours, give a warning
                 bool fMatch = false;
-                BOOST_FOREACH(int64_t nOffset, vSorted)
+                for (auto const& nOffset : vSorted)
                     if (nOffset != 0 && abs64(nOffset) < 5 * 60)
                         fMatch = true;
 
@@ -1397,7 +1396,7 @@ void AddTimeData(const CNetAddr& ip, int64_t nTime)
             }
         }
         if (fDebug10) {
-            BOOST_FOREACH(int64_t n, vSorted)
+            for (auto const& n : vSorted)
                 printf("%+" PRId64 "  ", n);
             printf("|  ");
         }
@@ -1463,9 +1462,31 @@ std::string RoundToString(double d, int place)
     return ss.str();
 }
 
+double RoundFromString(const std::string& s, int place)
+{
+    return Round(atof(s.c_str()), place);
+}
+
 bool Contains(const std::string& data, const std::string& instring)
 {
     return data.find(instring) != std::string::npos;
+}
+
+std::vector<std::string> split(const std::string& s, const std::string& delim)
+{
+    size_t pos = 0;
+    size_t end = 0;
+    std::vector<std::string> elems;
+
+    while((end = s.find(delim, pos)) != std::string::npos)
+    {
+        elems.push_back(s.substr(pos, end - pos));
+        pos = end + delim.size();
+    }
+
+    // Append final value
+    elems.push_back(s.substr(pos, end - pos));
+    return elems;
 }
 
 std::string GetNeuralVersion()
@@ -1583,4 +1604,67 @@ std::string MakeSafeMessage(const std::string& messagestring)
         safemessage = "";
     }
     return safemessage;
+}
+
+bool ThreadHandler::createThread(void(*pfn)(ThreadHandlerPtr), ThreadHandlerPtr parg, const std::string tname)
+{
+    try
+    {
+        boost::thread *newThread = new boost::thread(pfn, parg);
+        threadGroup.add_thread(newThread);
+        threadMap[tname] = newThread;
+    } catch(boost::thread_resource_error &e) {
+        printf("Error creating thread: %s\n", e.what());
+        return false;
+    }
+    return true;
+}
+
+bool ThreadHandler::createThread(void(*pfn)(void*), void* parg, const std::string tname)
+{
+    try
+    {
+        boost::thread *newThread = new boost::thread(pfn, parg);
+        threadGroup.add_thread(newThread);
+        threadMap[tname] = newThread;
+    } catch(boost::thread_resource_error &e) {
+        printf("Error creating thread: %s\n", e.what());
+        return false;
+    }
+    return true;
+}
+
+int ThreadHandler::numThreads()
+{
+    return threadGroup.size();
+}
+
+bool ThreadHandler::threadExists(const string tname)
+{
+    if(threadMap.count(tname) > 0)
+        return true;
+    else
+        return false;
+}
+
+void ThreadHandler::interruptAll(){
+    threadGroup.interrupt_all();
+}
+
+void ThreadHandler::removeByName(const std::string tname)
+{
+    threadGroup.remove_thread(threadMap[tname]);
+    threadMap[tname]->join();
+    threadMap.erase(tname);
+}
+
+void ThreadHandler::removeAll()
+{
+    printf("Wait for %d threads to join.\n",numThreads());
+    threadGroup.join_all();
+    for (auto it=threadMap.begin(); it!=threadMap.end(); ++it)
+    {
+        threadGroup.remove_thread(it->second);
+    }
+    threadMap.clear();
 }

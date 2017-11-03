@@ -14,7 +14,6 @@
 #include <memenv/memenv.h>
 
 #include "kernel.h"
-#include "checkpoints.h"
 #include "txdb.h"
 #include "util.h"
 #include "main.h"
@@ -279,26 +278,6 @@ bool CTxDB::WriteBestInvalidTrust(CBigNum bnBestInvalidTrust)
     return Write(string("bnBestInvalidTrust"), bnBestInvalidTrust);
 }
 
-bool CTxDB::ReadSyncCheckpoint(uint256& hashCheckpoint)
-{
-    return Read(string("hashSyncCheckpoint"), hashCheckpoint);
-}
-
-bool CTxDB::WriteSyncCheckpoint(uint256 hashCheckpoint)
-{
-    return Write(string("hashSyncCheckpoint"), hashCheckpoint);
-}
-
-bool CTxDB::ReadCheckpointPubKey(string& strPubKey)
-{
-    return Read(string("strCheckpointPubKey"), strPubKey);
-}
-
-bool CTxDB::WriteCheckpointPubKey(const string& strPubKey)
-{
-    return Write(string("strCheckpointPubKey"), strPubKey);
-}
-
 bool CTxDB::ReadGenericData(std::string KeyName, std::string& strValue)
 {
     return Read(string(KeyName.c_str()), strValue);
@@ -440,13 +419,13 @@ bool CTxDB::LoadBlockIndex()
     // Calculate nChainTrust
     vector<pair<int, CBlockIndex*> > vSortedByHeight;
     vSortedByHeight.reserve(mapBlockIndex.size());
-    BOOST_FOREACH(const PAIRTYPE(uint256, CBlockIndex*)& item, mapBlockIndex)
+    for (auto const& item : mapBlockIndex)
     {
         CBlockIndex* pindex = item.second;
         vSortedByHeight.push_back(make_pair(pindex->nHeight, pindex));
     }
     sort(vSortedByHeight.begin(), vSortedByHeight.end());
-    BOOST_FOREACH(const PAIRTYPE(int, CBlockIndex*)& item, vSortedByHeight)
+    for (auto const& item : vSortedByHeight)
     {
         CBlockIndex* pindex = item.second;
         pindex->nChainTrust = (pindex->pprev ? pindex->pprev->nChainTrust : 0) + pindex->GetBlockTrust();
@@ -477,11 +456,6 @@ bool CTxDB::LoadBlockIndex()
     printf("LoadBlockIndex(): hashBestChain=%s  height=%d  trust=%s  date=%s\n",
       hashBestChain.ToString().substr(0,20).c_str(), nBestHeight, CBigNum(nBestChainTrust).ToString().c_str(),
       DateTimeStrFormat("%x %H:%M:%S", pindexBest->GetBlockTime()).c_str());
-
-    // NovaCoin: load hashSyncCheckpoint
-    if (!ReadSyncCheckpoint(Checkpoints::hashSyncCheckpoint))
-        return error("CTxDB::LoadBlockIndex() : hashSyncCheckpoint not loaded");
-    printf("LoadBlockIndex(): synchronized checkpoint %s\n", Checkpoints::hashSyncCheckpoint.ToString().c_str());
 
     // Load bnBestInvalidTrust, OK if it doesn't exist
     CBigNum bnBestInvalidTrust;
@@ -532,7 +506,7 @@ bool CTxDB::LoadBlockIndex()
         {
             pair<unsigned int, unsigned int> pos = make_pair(pindex->nFile, pindex->nBlockPos);
             mapBlockPos[pos] = pindex;
-            BOOST_FOREACH(const CTransaction &tx, block.vtx)
+            for (auto const& tx : block.vtx)
             {
                 uint256 hashTx = tx.GetHash();
                 CTxIndex txindex;
@@ -559,7 +533,7 @@ bool CTxDB::LoadBlockIndex()
                     unsigned int nOutput = 0;
                     if (nCheckLevel>3)
                     {
-                        BOOST_FOREACH(const CDiskTxPos &txpos, txindex.vSpent)
+                        for (auto const& txpos : txindex.vSpent)
                         {
                             if (!txpos.IsNull())
                             {
@@ -586,7 +560,7 @@ bool CTxDB::LoadBlockIndex()
                                     else
                                     {
                                         bool fFound = false;
-                                        BOOST_FOREACH(const CTxIn &txin, txSpend.vin)
+                                        for (auto const& txin : txSpend.vin)
                                             if (txin.prevout.hash == hashTx && txin.prevout.n == nOutput)
                                                 fFound = true;
                                         if (!fFound)
@@ -604,7 +578,7 @@ bool CTxDB::LoadBlockIndex()
                 // check level 5: check whether all prevouts are marked spent
                 if (nCheckLevel>4)
                 {
-                     BOOST_FOREACH(const CTxIn &txin, tx.vin)
+                     for (auto const& txin : tx.vin)
                      {
                           CTxIndex txindex;
                           if (ReadTxIndex(txin.prevout.hash, txindex))

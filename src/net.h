@@ -8,7 +8,6 @@
 #include <deque>
 #include <array>
 #include <atomic>
-#include <boost/foreach.hpp>
 #include <openssl/rand.h>
 
 
@@ -59,7 +58,6 @@ enum
     LOCAL_IF,     // address a local interface listens on
     LOCAL_BIND,   // address explicit bound to
     LOCAL_UPNP,   // address reported by UPnP
-    LOCAL_IRC,    // address reported by IRC (deprecated)
     LOCAL_HTTP,   // address reported by whatismyip.com and similar
     LOCAL_MANUAL, // address explicitly specified (-externalip=)
 
@@ -105,38 +103,17 @@ public:
     }
 };
 
-
-
-/** Thread types */
-enum threadId
-{
-    THREAD_SOCKETHANDLER,
-    THREAD_OPENCONNECTIONS,
-    THREAD_MESSAGEHANDLER,
-    THREAD_RPCLISTENER,
-    THREAD_UPNP,
-    THREAD_DNSSEED,
-    THREAD_ADDEDCONNECTIONS,
-    THREAD_DUMPADDRESS,
-    THREAD_RPCHANDLER,
-    THREAD_STAKE_MINER,
-	THREAD_TALLY,
-	THREAD_SERVICES,
-    THREAD_MAX
-};
-
 extern bool fDiscover;
 extern bool fUseUPnP;
 extern uint64_t nLocalServices;
 extern uint64_t nLocalHostNonce;
 extern CAddress addrSeenByPeer;
-extern std::array<int, THREAD_MAX> vnThreadsRunning;
 extern CAddrMan addrman;
 extern std::map<CInv, CDataStream> mapRelay;
 extern std::deque<std::pair<int64_t, CInv> > vRelayExpiration;
 extern CCriticalSection cs_mapRelay;
 extern std::map<CInv, int64_t> mapAlreadyAskedFor;
-
+extern ThreadHandler* netThreads;
 
 
 extern std::vector<std::string> vAddedNodes;
@@ -159,7 +136,6 @@ public:
     double dPingTime;
     double dPingWait;
 	std::string addrLocal;
-	std::string sNeuralNetwork;
 	std::string NeuralHash;
 	int nTrust;
 	std::string sGRCAddress;
@@ -241,7 +217,6 @@ public:
 	//12-10-2014 CPID Support
 	std::string cpid;
 	std::string enccpid;
-	std::string sNeuralNetwork;
 	std::string NeuralHash;
 	std::string sGRCAddress;
 	int nTrust;
@@ -333,7 +308,6 @@ public:
 		nLastOrphan=0;
 		nOrphanCount=0;
 		nOrphanCountViolations=0;
-		sNeuralNetwork="";
 		NeuralHash = "";
 		sGRCAddress = "";
 		nTrust = 0;
@@ -381,7 +355,7 @@ public:
     unsigned int GetTotalRecvSize()
     {
         unsigned int total = 0;
-        BOOST_FOREACH(const CNetMessage &msg, vRecvMsg) 
+        for (auto const& msg : vRecvMsg)
             total += msg.vRecv.size() + 24;
         return total;
     }
@@ -393,7 +367,7 @@ public:
     void SetRecvVersion(int nVersionIn)
     {
         nRecvVersion = nVersionIn;
-        BOOST_FOREACH(CNetMessage &msg, vRecvMsg)
+        for (auto &msg : vRecvMsg)
             msg.SetVersion(nVersionIn);
     }
 
@@ -651,7 +625,7 @@ inline void RelayInventory(const CInv& inv)
     // Put on lists to offer to the other nodes
     {
         LOCK(cs_vNodes);
-        BOOST_FOREACH(CNode* pnode, vNodes)
+        for (auto const& pnode : vNodes)
             pnode->PushInventory(inv);
     }
 }

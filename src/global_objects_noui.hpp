@@ -7,24 +7,14 @@
 extern int nBoincUtilization;
 extern std::string sRegVer;
 extern int nRegVersion;
-extern bool bDebugMode;
-extern bool bBoincSubsidyEligible;
-extern volatile bool bCPIDsLoaded;
-extern volatile bool bProjectsInitialized;
-extern volatile int  iCriticalThreadDelay;
-extern volatile bool CreatingNewBlock;
-extern volatile bool bNetAveragesLoaded;
-extern volatile bool bForceUpdate;
-extern volatile bool bCheckedForUpgrade;
-extern volatile bool bCheckedForUpgradeLive;
-extern volatile bool bGlobalcomInitialized;
-extern volatile bool bAllowBackToBack;
-extern volatile bool CreatingCPUBlock;
-extern volatile bool bStakeMinerOutOfSyncWithNetwork;
-extern volatile bool bDoTally;
-extern volatile bool bExecuteGridcoinServices;
-extern volatile bool bTallyFinished;
-extern volatile bool bGridcoinGUILoaded;
+extern bool bCPIDsLoaded;
+extern bool bProjectsInitialized;
+extern bool bNetAveragesLoaded;
+extern bool bForceUpdate;
+extern bool bCheckedForUpgrade;
+extern bool bCheckedForUpgradeLive;
+extern bool bGlobalcomInitialized;
+extern bool bGridcoinGUILoaded;
 
 struct StructCPID
 {
@@ -157,8 +147,6 @@ extern std::map<std::string, StructCPIDCache> mvAppCache; //Contains cached bloc
 //Global CPU Mining CPID:
 extern MiningCPID GlobalCPUMiningCPID;
 
-//Boinc Valid Projects
-extern std::map<std::string, StructCPID> mvBoincProjects; // Contains all of the allowed boinc projects;
 // Timers
 extern std::map<std::string, int> mvTimers; // Contains event timers that reset after max ms duration iterator is exceeded
 

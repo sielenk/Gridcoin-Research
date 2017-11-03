@@ -45,12 +45,20 @@ namespace json_spirit
         Value_impl( const Array&       value );
         Value_impl( bool               value );
         Value_impl( int                value );
-        Value_impl( int64_t     value );
-        Value_impl( uint64_t    value );
+        Value_impl( unsigned int       value );
+        Value_impl( int64_t            value );
+        Value_impl( uint64_t           value );
         Value_impl( double             value );
-
+        
+#ifdef __APPLE__
+        // Workaround for size_t ambiguously converting to int64/uint64 on
+        // OSX while being redefined as uint64_t on Linux. There must be
+        // a better way to do this.
+        Value_impl( size_t             value );
+#endif
+        
         Value_impl( const Value_impl& other );
-
+        
         bool operator==( const Value_impl& lhs ) const;
 
         Value_impl& operator=( const Value_impl& lhs );
@@ -264,12 +272,30 @@ namespace json_spirit
     }
 
     template< class Config >
+    Value_impl< Config >::Value_impl( unsigned int value )
+    :   type_( int_type )
+    ,   v_( static_cast< int64_t >( value ) )
+    ,   is_uint64_( true )
+    {
+    }
+
+    template< class Config >
     Value_impl< Config >::Value_impl( int64_t value )
     :   type_( int_type )
     ,   v_( value )
     ,   is_uint64_( false )
     {
     }
+    
+#ifdef __APPLE__
+    template< class Config >
+    Value_impl< Config >::Value_impl( size_t value )
+    :   type_( int_type )
+    ,   v_( value )
+    ,   is_uint64_( false )
+    {
+    }
+#endif
 
     template< class Config >
     Value_impl< Config >::Value_impl( uint64_t value )

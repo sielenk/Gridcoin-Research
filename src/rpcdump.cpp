@@ -63,7 +63,7 @@ std::string static EncodeDumpTime(int64_t nTime) {
 
 std::string static EncodeDumpString(const std::string &str) {
     std::stringstream ret;
-    BOOST_FOREACH(unsigned char c, str) {
+    for (unsigned char c : str) {
         if (c <= 32 || c >= 128 || c == '%') {
             ret << '%' << HexStr(&c, &c + 1);
         } else {
@@ -142,7 +142,6 @@ Value importprivkey(const Array& params, bool fHelp)
         LOCK2(cs_main, pwalletMain->cs_wallet);
 
         pwalletMain->MarkDirty();
-        pwalletMain->SetAddressBookName(vchAddress, strLabel);
 
         // Don't throw error in case a key is already there
         if (pwalletMain->HaveKey(vchAddress))
@@ -155,6 +154,8 @@ Value importprivkey(const Array& params, bool fHelp)
 
         // whenever a key is imported, we need to scan the whole chain
         pwalletMain->nTimeFirstKey = 1; // 0 would be considered 'no value'
+        pwalletMain->SetAddressBookName(vchAddress, strLabel);
+
         if (fRescan)
         {
             pwalletMain->ScanForWalletTransactions(pindexGenesisBlock, true);

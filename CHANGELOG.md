@@ -4,13 +4,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
-## [Unreleased]
+## [3.6.3.0] 2017-10-09
+### Fixed
+ - Fix problems sending beacons on Windows, #684 (@tomasbrod).
+ - Fix clients getting stuck at V8 blocks when syncing, #686 (@tomasbrod).
+
+## [3.6.2.0] 2017-09-28
+### Added
+ - Add "backupprivatekeys" RPC command, #593 (@Foggyx420).
+ - Add more transaction details to the UI, #573 (@tomasbrod).
+ - Add Additional logging to diagnose PoR reward loss (@tomasbrod)
+
+### Fixed
+ - Reduce startup time by 15 seconds, #626 (@tomasbrod, @Foggyx420).
+ - Prevent email being leaked in CPIDv2 block field, #621 (@tomasbrod).
+ - Fixed memory leaks when receiving orphans while in sync, #622 (@denravonska).
+ - Unconfirmed balance was not shown in UI, #615, (@Foggyx420).
+ - Fix memory leaks when clearing orphans, #609, (@MagixInTheAir).
+ - Fix an issue where multiple beacons could be advertised in rapid
+   succession, #604 (@Foggyx420).
+ - Stake weight in the UI will no longer include old DPOR weght, #602
+   (@Foggyx420). 
+ - Fix stake modifier mismatch which caused nodes to get stuck on first
+   V8 block, #581 (@tomasbrod).
+ - Fix beacon auto advertisment issue when done automatically, #580 (@Foggyx420). 
+ - Fix for loss of PoR rewards due to reorganize, #578 (@tomasbrod).
+ - Fix upgrader compile error on Linux, #541 (@theMarix).
+ - Fix duplicate poll entries, #539 (@denravonska).
+ - Importing private keys will no longer require a restart for the addresses
+   to show up, #634 (@Foggyx420).
+ - Fix invalid backup filenames on Windows, #569 (@denravonska).
+
+### Changed
+ - Code cleanup (@Foggyx420, @tomasbrod, @denravonska).
+ - Several NN consensus sync improvements, #616 (@Foggyx420).
+ - Windows nodes will no longer automatically reboot/shutdown, #605
+   (@denravonska).
+ - Display "No Polls!" in poll window if no polls are running, #596
+   (@MagixInTheAir).
+ - Change poll min search length from 2 to 1, #595 (@MagixInTheAir).
+ - Return the results of "backupwallet" RPC command, #593 (@Foggyx420).
+ - Changing the community links #654 (@grctest)
+
+## [3.6.1.0] 2017-09-11
+### Fixed
+ - Fix problems forging superblock due to rounding differences, #608 (@denravonska).
+ - Fetch data from project servers if missing on scraper #564 (@denravonska).
+
+## [3.6.0.2] 2017-08-26
 ### Fixed
  - Fix incorrect V8 height trigger check. Many thanks to @barton2526 for discovering this.
  - Fix invalid superblock height formatting, #532 (@denravonska).
  - Fix several spelling mistakes, 533 (@Erkan-Yilmaz).
 
-## [3.6.0.1] 08-22-2017
+## [3.6.0.1] 2017-08-22
 ### Added
  - Added [V8 stake engine](https://github.com/gridcoin/Gridcoin-Research/wiki/Stake-V8)
    set to start producing V8 blocks at block 1010000. This fixes several security issues,

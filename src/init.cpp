@@ -9,32 +9,26 @@
 #include "init.h"
 #include "util.h"
 #include "ui_interface.h"
-#include "checkpoints.h"
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <boost/filesystem/convenience.hpp>
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/thread.hpp>
 #include <openssl/crypto.h>
 
 #include <boost/algorithm/string/case_conv.hpp> // for to_lower()
 #include <boost/algorithm/string/predicate.hpp> // for startswith() and endswith()
 #include "global_objects_noui.hpp"
 
-std::vector<std::string> split(std::string s, std::string delim);
 bool LoadAdminMessages(bool bFullTableScan,std::string& out_errors);
-extern boost::thread_group threadGroup;
 
 StructCPID GetStructCPID();
 bool ComputeNeuralNetworkSupermajorityHashes();
-void BusyWaitForTally();
+void TallyNetworkAverages();
 extern void ThreadAppInit2(void* parg);
 
 void LoadCPIDsInBackground();
 bool IsConfigFileEmpty();
-
-std::string ToOfficialName(std::string proj);
 
 #ifndef WIN32
 #include <signal.h>
@@ -50,32 +44,15 @@ extern unsigned int nNodeLifespan;
 extern unsigned int nDerivationMethodIndex;
 extern unsigned int nMinerSleep;
 extern bool fUseFastIndex;
-extern enum Checkpoints::CPMode CheckpointsMode;
-void InitializeBoincProjects();
-
 
 //////////////////////////////////////////////////////////////////////////////
 //
 // Shutdown
 //
 
-
-
-
-
-
 bool ShutdownRequested()
 {
     return fRequestShutdown;
-}
-
-
-void ExitTimeout(void* parg)
-{
-#ifdef WIN32
-    MilliSleep(5000);
-    ExitProcess(0);
-#endif
 }
 
 void StartShutdown()
@@ -87,79 +64,10 @@ void StartShutdown()
     // ensure we leave the Qt main loop for a clean GUI exit (Shutdown() is called in bitcoin.cpp afterwards)
     uiInterface.QueueShutdown();
 #else
-    // Without UI, Shutdown() can simply be started in a new thread
-    NewThread(Shutdown, NULL);
+    // Without UI, shutdown is initiated and shutdown() is called in AppInit
+    fRequestShutdown = true;
 #endif
 }
-
-
-
-void DetectShutdownThread(boost::thread_group* threadGroup)
-{
-    // Tell the main threads to shutdown.
-    while (!fRequestShutdown)
-    {
-        MilliSleep(200);
-        if (fRequestShutdown)
-        {
-            printf("Shutting down forcefully...");
-        }
-    }
-    printf("Shutdown thread ended.");
-}
-
-
-void InitializeBoincProjects()
-{
-       //Initialize GlobalCPUMiningCPID
-        GlobalCPUMiningCPID.initialized = true;
-        GlobalCPUMiningCPID.cpid="";
-        GlobalCPUMiningCPID.cpidv2 = "";
-        GlobalCPUMiningCPID.projectname ="";
-        GlobalCPUMiningCPID.rac=0;
-        GlobalCPUMiningCPID.encboincpublickey = "";
-        GlobalCPUMiningCPID.boincruntimepublickey = "";
-        GlobalCPUMiningCPID.pobdifficulty = 0;
-        GlobalCPUMiningCPID.diffbytes = 0;
-        GlobalCPUMiningCPID.email = "";
-        GlobalCPUMiningCPID.RSAWeight = 0;
-
-        //Loop through projects saved in the Gridcoin Persisted Data System
-        std::string sType = "project";
-        for(map<string,string>::iterator ii=mvApplicationCache.begin(); ii!=mvApplicationCache.end(); ++ii)
-        {
-                std::string key_name  = (*ii).first;
-                if (key_name.length() > sType.length())
-                {
-                    if (key_name.substr(0,sType.length())==sType)
-                    {
-                            std::string key_value = mvApplicationCache[(*ii).first];
-                            std::vector<std::string> vKey = split(key_name,";");
-                            if (vKey.size() > 0)
-                            {
-
-                                std::string project_name = vKey[1];
-                                printf("Proj %s ",project_name.c_str());
-                                std::string project_value = key_value;
-                                boost::to_lower(project_name);
-                                std::string mainProject = ToOfficialName(project_name);
-                                boost::to_lower(mainProject);
-                                StructCPID structcpid = GetStructCPID();
-                                mvBoincProjects.insert(map<string,StructCPID>::value_type(mainProject,structcpid));
-                                structcpid = mvBoincProjects[mainProject];
-                                structcpid.initialized = true;
-                                structcpid.link = "http://";
-                                structcpid.projectname = mainProject;
-                                mvBoincProjects[mainProject] = structcpid;
-                                WHITELISTED_PROJECTS++;
-
-                            }
-                     }
-                }
-       }
-
-}
-
 
 void Shutdown(void* parg)
 {
@@ -184,22 +92,18 @@ void Shutdown(void* parg)
          printf("gridcoinresearch exiting...\r\n");
 
         fShutdown = true;
-        nTransactionsUpdated++;
-        //        CTxDB().Close();
         bitdb.Flush(false);
         StopNode();
         bitdb.Flush(true);
+        StopRPCThreads();
         boost::filesystem::remove(GetPidFile());
         UnregisterWallet(pwalletMain);
         delete pwalletMain;
-        NewThread(ExitTimeout, NULL);
+        // close transaction database to prevent lock issue on restart
+        CTxDB().Close();
         MilliSleep(50);
         printf("Gridcoin exited\n\n");
         fExit = true;
-#ifndef QT_GUI
-        // ensure non-UI client gets exited here, but let Bitcoin-Qt reach 'return 0;' in bitcoin.cpp
-        exit(0);
-#endif
     }
     else
     {
@@ -231,6 +135,8 @@ bool AppInit(int argc, char* argv[])
 {
 
     bool fRet = false;
+
+    ThreadHandlerPtr threads = std::make_shared<ThreadHandler>();
 
     try
     {
@@ -273,9 +179,8 @@ bool AppInit(int argc, char* argv[])
             int ret = CommandLineRPC(argc, argv);
             exit(ret);
         }
-        new boost::thread(boost::bind(&DetectShutdownThread, &threadGroup));
 
-        fRet = AppInit2();
+        fRet = AppInit2(threads);
     }
     catch (std::exception& e) {
         printf("AppInit()Exception1");
@@ -286,8 +191,18 @@ bool AppInit(int argc, char* argv[])
 
         PrintException(NULL, "AppInit()");
     }
-    if (!fRet)
-        Shutdown(NULL);
+    if (fRet)
+    {   // succesfully initialized, wait for shutdown
+        while (!ShutdownRequested())
+            MilliSleep(500);
+    }
+    Shutdown(NULL);
+
+    // delete thread handler
+    threads->interruptAll();
+    threads->removeAll();
+    threads.reset();
+
     return fRet;
 }
 
@@ -359,12 +274,10 @@ std::string HelpMessage()
         "  -externalip=<ip>       " + _("Specify your own public address") + "\n" +
         "  -onlynet=<net>         " + _("Only connect to nodes in network <net> (IPv4, IPv6 or Tor)") + "\n" +
         "  -discover              " + _("Discover own IP address (default: 1 when listening and no -externalip)") + "\n" +
-        "  -irc                   " + _("Find peers using internet relay chat (default: 0)") + "\n" +
         "  -listen                " + _("Accept connections from outside (default: 1 if no -proxy or -connect)") + "\n" +
         "  -bind=<addr>           " + _("Bind to given address. Use [host]:port notation for IPv6") + "\n" +
         "  -dnsseed               " + _("Find peers using DNS lookup (default: 1)") + "\n" +
         "  -synctime              " + _("Sync time with other nodes. Disable if time on your system is precise e.g. syncing with NTP (default: 1)") + "\n" +
-        "  -cppolicy              " + _("Sync checkpoints policy (default: strict)") + "\n" +
         "  -banscore=<n>          " + _("Threshold for disconnecting misbehaving peers (default: 100)") + "\n" +
         "  -bantime=<n>           " + _("Number of seconds to keep misbehaving peers from reconnecting (default: 86400)") + "\n" +
         "  -maxreceivebuffer=<n>  " + _("Maximum per-connection receive buffer, <n>*1000 bytes (default: 5000)") + "\n" +
@@ -446,13 +359,13 @@ bool InitSanityCheck(void)
 
 
 
-void ThreadAppInit2(void* parg)
+void ThreadAppInit2(ThreadHandlerPtr th)
 {
     // Make this thread recognisable
     RenameThread("grc-appinit2");
     bGridcoinGUILoaded=false;
     printf("Initializing GUI...");
-    AppInit2();
+    AppInit2(th);
     printf("GUI Loaded...");
     bGridcoinGUILoaded = true;
 }
@@ -464,7 +377,7 @@ void ThreadAppInit2(void* parg)
 /** Initialize Gridcoin.
  *  @pre Parameters should be parsed and config file should be read.
  */
-bool AppInit2()
+bool AppInit2(ThreadHandlerPtr threads)
 {
     // ********************************************************* Step 1: setup
 #ifdef _MSC_VER
@@ -535,27 +448,8 @@ bool AppInit2()
     fUseFastIndex = GetBoolArg("-fastindex", false);
 
     nMinerSleep = GetArg("-minersleep", 8000);
-
-    CheckpointsMode = Checkpoints::STRICT;
-    //CheckpointsMode = Checkpoints::ADVISORY;
-
-    std::string strCpMode = GetArg("-cppolicy", "strict");
-
-    if(strCpMode == "strict")
-        CheckpointsMode = Checkpoints::STRICT;
-
-    if(strCpMode == "advisory")
-        CheckpointsMode = Checkpoints::ADVISORY;
-
-    if(strCpMode == "permissive")
-        CheckpointsMode = Checkpoints::PERMISSIVE;
-
     nDerivationMethodIndex = 0;
-
     fTestNet = GetBoolArg("-testnet");
-    if (fTestNet) {
-        SoftSetBoolArg("-irc", true);
-    }
 
     if (mapArgs.count("-bind")) {
         // when specifying an explicit binding address, you want to listen on it
@@ -778,7 +672,8 @@ bool AppInit2()
 
     if (mapArgs.count("-onlynet")) {
         std::set<enum Network> nets;
-        BOOST_FOREACH(std::string snet, mapMultiArgs["-onlynet"]) {
+        for (auto const& snet : mapMultiArgs["-onlynet"])
+        {
             enum Network net = ParseNetwork(snet);
             if (net == NET_UNROUTABLE)
                 return InitError(strprintf(_("Unknown network specified in -onlynet: '%s'"), snet.c_str()));
@@ -834,7 +729,8 @@ bool AppInit2()
     {
         std::string strError;
         if (mapArgs.count("-bind")) {
-            BOOST_FOREACH(std::string strBind, mapMultiArgs["-bind"]) {
+            for (auto const& strBind : mapMultiArgs["-bind"])
+            {
                 CService addrBind;
                 if (!Lookup(strBind.c_str(), addrBind, GetListenPort(), false))
                     return InitError(strprintf(_("Cannot resolve -bind address: '%s'"), strBind.c_str()));
@@ -854,7 +750,8 @@ bool AppInit2()
 
     if (mapArgs.count("-externalip"))
     {
-        BOOST_FOREACH(string strAddr, mapMultiArgs["-externalip"]) {
+        for (auto const& strAddr : mapMultiArgs["-externalip"])
+        {
             CService addrLocal(strAddr, GetListenPort(), fNameLookup);
             if (!addrLocal.IsValid())
                 return InitError(strprintf(_("Cannot resolve -externalip address: '%s'"), strAddr.c_str()));
@@ -871,13 +768,7 @@ bool AppInit2()
         }
     }
 
-    if (mapArgs.count("-checkpointkey")) // ppcoin: checkpoint master priv key
-    {
-        if (!Checkpoints::SetCheckpointPrivKey(GetArg("-checkpointkey", "")))
-            InitError(_("Unable to sign checkpoint, wrong checkpointkey?\n"));
-    }
-
-    BOOST_FOREACH(string strDest, mapMultiArgs["-seednode"])
+    for (auto const& strDest : mapMultiArgs["-seednode"])
         AddOneShot(strDest);
 
     // ********************************************************* Step 7: load blockchain
@@ -1033,7 +924,7 @@ bool AppInit2()
     {
         uiInterface.InitMessage(_("Importing blockchain data file."));
 
-        BOOST_FOREACH(string strFile, mapMultiArgs["-loadblock"])
+        for (auto const& strFile : mapMultiArgs["-loadblock"])
         {
             FILE *file = fopen(strFile.c_str(), "rb");
             if (file)
@@ -1077,13 +968,7 @@ bool AppInit2()
     LoadAdminMessages(true,sOut);
     printf("Done loading Admin messages");
 
-    InitializeBoincProjects();
-    printf("Done loading boinc projects");
-    uiInterface.InitMessage(_("Loading Network Averages..."));
-    if (fDebug3) printf("Loading network averages");
-    BusyWaitForTally();
     uiInterface.InitMessage(_("Compute Neural Network Hashes..."));
-
     ComputeNeuralNetworkSupermajorityHashes();
 
     printf("Starting CPID thread...");
@@ -1107,11 +992,15 @@ bool AppInit2()
     }
 
 
-    if (!NewThread(StartNode, NULL))
+    uiInterface.InitMessage(_("Loading Network Averages..."));
+    if (fDebug3) printf("Loading network averages");
+    TallyNetworkAverages();
+
+    if (!threads->createThread(StartNode, NULL, "Start Thread"))
         InitError(_("Error: could not start node"));
 
     if (fServer)
-        NewThread(ThreadRPCServer, NULL);
+        threads->createThread(ThreadRPCServer, NULL, "RPC Server Thread");
 
     // ********************************************************* Step 12: finished
 
@@ -1124,12 +1013,6 @@ bool AppInit2()
      // Add wallet transactions that aren't already in a block to mapTransactions
     pwalletMain->ReacceptWalletTransactions();
 
-#if !defined(QT_GUI)
-    // Loop until process is exit()ed from shutdown() function,
-    // called from ThreadRPCServer thread when a "stop" command is received.
-    while (1)
-        MilliSleep(5000);
-#endif
     printf("\r\nExiting AppInit2\r\n");
     return true;
 }

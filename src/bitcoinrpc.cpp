@@ -16,7 +16,6 @@
 #include <boost/asio/ip/v6_only.hpp>
 #include <boost/bind.hpp>
 #include <boost/filesystem.hpp>
-#include <boost/foreach.hpp>
 #include <boost/iostreams/concepts.hpp>
 #include <boost/iostreams/stream.hpp>
 #include <boost/algorithm/string.hpp>
@@ -35,6 +34,9 @@ using namespace json_spirit;
 void ThreadRPCServer2(void* parg);
 
 static std::string strRPCUserColonPass;
+
+// These are created by StartRPCThreads, destroyed in StopRPCThreads
+static asio::io_service* rpc_io_service = NULL;
 
 const Object emptyobj;
 
@@ -58,7 +60,7 @@ void RPCTypeCheck(const Array& params,
                   bool fAllowNull)
 {
     unsigned int i = 0;
-    BOOST_FOREACH(Value_type t, typesExpected)
+    for (auto const& t : typesExpected)
     {
         if (params.size() <= i)
             break;
@@ -78,7 +80,7 @@ void RPCTypeCheck(const Object& o,
                   const map<string, Value_type>& typesExpected,
                   bool fAllowNull)
 {
-    BOOST_FOREACH(const PAIRTYPE(string, Value_type)& t, typesExpected)
+    for (auto const& t : typesExpected)
     {
         const Value& v = find_value(o, t.first);
         if (!fAllowNull && v.type() == null_type)
@@ -238,7 +240,6 @@ static const CRPCCommand vRPCCommands[] =
     { "getnettotals",           &getnettotals,           true,   true  },
     { "getdifficulty",          &getdifficulty,          true,   false },
     { "getinfo",                &getinfo,                true,   false },
-    { "getsubsidy",             &getsubsidy,             true,   false },
     { "getmininginfo",          &getmininginfo,          true,   false },
     { "getstakinginfo",         &getmininginfo,          true,   false },
     { "getnewaddress",          &getnewaddress,          true,   false },
@@ -345,7 +346,7 @@ string HTTPPost(const string& strMsg, const map<string,string>& mapRequestHeader
       << "Content-Length: " << strMsg.size() << "\r\n"
       << "Connection: close\r\n"
       << "Accept: application/json\r\n";
-    BOOST_FOREACH(const PAIRTYPE(string, string)& item, mapRequestHeaders)
+    for (auto const& item : mapRequestHeaders)
         s << item.first << ": " << item.second << "\r\n";
     s << "\r\n" << strMsg;
 
@@ -559,7 +560,7 @@ bool ClientAllowed(const boost::asio::ip::address& address)
 
     const string strAddress = address.to_string();
     const vector<string>& vAllow = mapMultiArgs["-rpcallowip"];
-    BOOST_FOREACH(string strAllow, vAllow)
+    for (auto const& strAllow : vAllow)
         if (WildcardMatch(strAddress, strAllow))
             return true;
     return false;
@@ -665,6 +666,16 @@ private:
     iostreams::stream< SSLIOStreamDevice<Protocol> > _stream;
 };
 
+void StopRPCThreads()
+{
+    if(!rpc_io_service)
+        return;
+    
+    rpc_io_service->stop();
+    delete rpc_io_service;
+    rpc_io_service = NULL;
+}
+
 void ThreadRPCServer(void* parg)
 {
     // Make this thread recognisable as the RPC listener
@@ -672,15 +683,19 @@ void ThreadRPCServer(void* parg)
 
     try
     {
-        vnThreadsRunning[THREAD_RPCLISTENER]++;
         ThreadRPCServer2(parg);
-        vnThreadsRunning[THREAD_RPCLISTENER]--;
     }
-    catch (std::exception& e) {
-        vnThreadsRunning[THREAD_RPCLISTENER]--;
+    catch (std::exception& e)
+    {
         PrintException(&e, "ThreadRPCServer()");
-    } catch (...) {
-        vnThreadsRunning[THREAD_RPCLISTENER]--;
+    }
+    catch (boost::thread_interrupted&)
+    {
+            printf("ThreadRPCServer exited (interrupt)\r\n");
+            return;
+    }
+    catch (...)
+    {
         PrintException(NULL, "ThreadRPCServer()");
     }
     printf("ThreadRPCServer exited\n");
@@ -726,7 +741,6 @@ static void RPCAcceptHandler(boost::shared_ptr< basic_socket_acceptor<Protocol, 
                              AcceptedConnection* conn,
                              const boost::system::error_code& error)
 {
-    vnThreadsRunning[THREAD_RPCLISTENER]++;
 
     // Immediately start accepting new connections, except when we're cancelled or our socket is closed.
     if (error != asio::error::operation_aborted
@@ -754,12 +768,10 @@ static void RPCAcceptHandler(boost::shared_ptr< basic_socket_acceptor<Protocol, 
     }
 
     // start HTTP client thread
-    else if (!NewThread(ThreadRPCServer3, conn)) {
-        printf("Failed to create RPC server client thread\n");
+    else if (!netThreads->createThread(ThreadRPCServer3, conn,"ThreadRPCServer3")) {
+        printf("Failed to create RPC server client thread\r\n");
         delete conn;
     }
-
-    vnThreadsRunning[THREAD_RPCLISTENER]--;
 }
 
 void ThreadRPCServer2(void* parg)
@@ -797,9 +809,10 @@ void ThreadRPCServer2(void* parg)
 
     const bool fUseSSL = GetBoolArg("-rpcssl");
 
-    asio::io_service io_service;
+    assert(rpc_io_service == NULL);
+    rpc_io_service = new asio::io_service();
 
-    ssl::context context(io_service, ssl::context::sslv23);
+    ssl::context context(*rpc_io_service, ssl::context::sslv23);
     if (fUseSSL)
     {
         context.set_options(ssl::context::no_sslv2);
@@ -823,7 +836,7 @@ void ThreadRPCServer2(void* parg)
     asio::ip::address bindAddress = loopback ? asio::ip::address_v6::loopback() : asio::ip::address_v6::any();
     ip::tcp::endpoint endpoint(bindAddress, GetArg("-rpcport", GetDefaultRPCPort()));
     boost::system::error_code v6_only_error;
-    boost::shared_ptr<ip::tcp::acceptor> acceptor(new ip::tcp::acceptor(io_service));
+    boost::shared_ptr<ip::tcp::acceptor> acceptor(new ip::tcp::acceptor(*rpc_io_service));
 
     boost::signals2::signal<void ()> StopRequests;
 
@@ -860,7 +873,7 @@ void ThreadRPCServer2(void* parg)
             bindAddress = loopback ? asio::ip::address_v4::loopback() : asio::ip::address_v4::any();
             endpoint.address(bindAddress);
 
-            acceptor.reset(new ip::tcp::acceptor(io_service));
+            acceptor.reset(new ip::tcp::acceptor(*rpc_io_service));
             acceptor->open(endpoint.protocol());
             acceptor->set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
             acceptor->bind(endpoint);
@@ -886,10 +899,8 @@ void ThreadRPCServer2(void* parg)
         return;
     }
 
-    vnThreadsRunning[THREAD_RPCLISTENER]--;
     while (!fShutdown)
-        io_service.run_one();
-    vnThreadsRunning[THREAD_RPCLISTENER]++;
+        rpc_io_service->run_one();
     StopRequests();
 }
 
@@ -979,7 +990,6 @@ void ThreadRPCServer3(void* parg)
 
     {
         LOCK(cs_THREAD_RPCHANDLER);
-        vnThreadsRunning[THREAD_RPCHANDLER]++;
     }
     AcceptedConnection *conn = (AcceptedConnection *) parg;
 
@@ -992,7 +1002,6 @@ void ThreadRPCServer3(void* parg)
             delete conn;
             {
                 LOCK(cs_THREAD_RPCHANDLER);
-                --vnThreadsRunning[THREAD_RPCHANDLER];
             }
             return;
         }
@@ -1064,7 +1073,6 @@ void ThreadRPCServer3(void* parg)
     delete conn;
     {
         LOCK(cs_THREAD_RPCHANDLER);
-        vnThreadsRunning[THREAD_RPCHANDLER]--;
     }
 }
 
@@ -1181,7 +1189,7 @@ void ConvertTo(Value& value, bool fAllowNull=false)
 Array RPCConvertValues(const std::string &strMethod, const std::vector<std::string> &strParams)
 {
     Array params;
-    BOOST_FOREACH(const std::string &param, strParams)
+    for (auto const& param : strParams)
         params.push_back(param);
 
     int n = params.size();
