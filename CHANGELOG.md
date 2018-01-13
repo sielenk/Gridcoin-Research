@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [3.7.3.0] 2018-01-13
+### Fixed
+ - Fix for UI getting stuck in splash screen (@denravonska).
+
+## [3.7.2.0] 2018-01-13
+### Fixed
+ - Properly fix for wallet not daemonizing, #822 (@denravonska).
+
 ## [3.7.1.0] 2018-01-10
 ### Fixed
  - Fix several crashes in diagnostic dialog, #816 (@Foggyx420).
