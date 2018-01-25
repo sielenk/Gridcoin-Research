@@ -149,7 +149,6 @@ int64_t nLastPing = 0;
 int64_t nLastAskedForBlocks = 0;
 int64_t nBootup = 0;
 int64_t nLastLoadAdminMessages = 0;
-int64_t nCPIDsLoaded = 0;
 int64_t nLastGRCtallied = 0;
 int64_t nLastCleaned = 0;
 
@@ -256,13 +255,12 @@ bool bForceUpdate = false;
 bool bGlobalcomInitialized = false;
 bool bStakeMinerOutOfSyncWithNetwork = false;
 volatile bool bDoTally_retired = false;
-volatile bool bTallyFinished_retired = false;
+volatile bool bTallyFinished_retired = true;
 bool bGridcoinGUILoaded = false;
 
 extern double LederstrumpfMagnitude2(double Magnitude, int64_t locktime);
 
 extern void WriteAppCache(std::string key, std::string value);
-extern void LoadCPIDsInBackground();
 
 extern void ThreadCPIDs();
 extern void GetGlobalStatus();
@@ -649,13 +647,12 @@ MiningCPID GetNextProject(bool bForce)
 
 
 
-    if ( (IsInitialBlockDownload() || !bCPIDsLoaded) && !bForce)
+    if (IsInitialBlockDownload() && !bForce)
     {
-            if (LessVerbose(100))           printf("CPUMiner: Gridcoin is downloading blocks Or CPIDs are not yet loaded...");
-            MilliSleep(1);
-            return GlobalCPUMiningCPID;
+        if (LessVerbose(100))           printf("CPUMiner: Gridcoin is downloading blocks Or CPIDs are not yet loaded...");
+        MilliSleep(1);
+        return GlobalCPUMiningCPID;
     }
-
 
     try
     {
@@ -4267,6 +4264,15 @@ void GridcoinServices()
         // Tally research averages.
         if ((nBestHeight % TALLY_GRANULARITY) == 0)
         {
+            // Wait for previous retired tally to finish if running.
+            // This can happen when syncing the chain.
+            if(!bTallyFinished_retired)
+            {
+                printf("SVC: Wait for retired tally to finish\n");
+                while(!bTallyFinished_retired)
+                    MilliSleep(10);
+            }
+
             if (fDebug) printf("SVC: TallyNetworkAverages (v9 %%%d) height %d\n",TALLY_GRANULARITY,nBestHeight);
             TallyNetworkAverages_v9();
         }
@@ -4436,7 +4442,7 @@ void GridcoinServices()
     if (TimerMain("gather_cpids",480))
         msNeuralResponse.clear();
 
-#ifdef QT_GUI
+/*#ifdef QT_GUI
     // Check for updates once per day.
     if(GetAdjustedTime() - nLastCheckedForUpdate > 24 * 60 * 60)
     {
@@ -4453,7 +4459,7 @@ void GridcoinServices()
             }
         }
     }
-#endif
+#endif*/
 
     if (fDebug10) printf(" {/SVC} ");
 }
@@ -7715,33 +7721,15 @@ void HarvestCPIDs(bool cleardata)
     {
              printf("Error while harvesting CPIDs 2.\r\n");
     }
-
-
-
 }
 
-
-
-void ThreadCPIDs()
+void LoadCPIDs()
 {
-    RenameThread("grc-cpids");
-    bCPIDsLoaded = false;
+    printf("Load CPID");
     HarvestCPIDs(true);
-    bCPIDsLoaded = true;
-    //CreditCheck(GlobalCPUMiningCPID.cpid,false);
     printf("Getting first project");
     GetNextProject(false);
     printf("Finished getting first project");
-    bProjectsInitialized = true;
-}
-
-
-void LoadCPIDsInBackground()
-{
-      if (IsLockTimeWithinMinutes(nCPIDsLoaded,10)) return;
-      nCPIDsLoaded = GetAdjustedTime();
-      cpidThreads = new boost::thread_group();
-      cpidThreads->create_thread(boost::bind(&ThreadCPIDs));
 }
 
 StructCPID GetStructCPID()
