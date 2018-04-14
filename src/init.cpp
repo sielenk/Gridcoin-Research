@@ -46,6 +46,8 @@ extern unsigned int nDerivationMethodIndex;
 extern unsigned int nMinerSleep;
 extern bool fUseFastIndex;
 
+int daemonPid = 0;
+
 //////////////////////////////////////////////////////////////////////////////
 //
 // Shutdown
@@ -97,7 +99,8 @@ void Shutdown(void* parg)
         StopNode();
         bitdb.Flush(true);
         StopRPCThreads();
-        boost::filesystem::remove(GetPidFile());
+        if (daemonPid <= 0)
+            boost::filesystem::remove(GetPidFile());
         UnregisterWallet(pwalletMain);
         delete pwalletMain;
         // close transaction database to prevent lock issue on restart
@@ -599,7 +602,7 @@ bool AppInit2(ThreadHandlerPtr threads)
     if (fDaemon)
     {
         // Daemonize
-        pid_t pid = fork();
+        pid_t pid = daemonPid = fork();
         if (pid < 0)
         {
             fprintf(stderr, "Error: fork() returned %d errno %d\n", pid, errno);
