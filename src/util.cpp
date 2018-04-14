@@ -1058,25 +1058,25 @@ boost::filesystem::path GetDefaultDataDir()
     // Windows
     return GetSpecialFolderPath(CSIDL_APPDATA) / "GridcoinResearch";
 #else
-        //2-25-2015
-        fs::path pathRet;
-        char* pszHome = getenv("HOME");
+    //2-25-2015
+    fs::path pathRet;
+    char* pszHome = getenv("HOME");
 
-        if (mapArgs.count("-datadir"))
+    if (mapArgs.count("-datadir"))
+    {
+        fs::path path2015 = fs::system_complete(mapArgs["-datadir"]);
+        if (fs::is_directory(path2015))
         {
-            fs::path path2015 = fs::system_complete(mapArgs["-datadir"]);
-            if (fs::is_directory(path2015))
-            {
-                pathRet = path2015;
-            }
+            pathRet = path2015;
         }
+    }
+    else
+    {
+        if (pszHome == NULL || strlen(pszHome) == 0)
+            pathRet = fs::path("/");
         else
-        {
-            if (pszHome == NULL || strlen(pszHome) == 0)
-                pathRet = fs::path("/");
-            else
-                pathRet = fs::path(pszHome);
-        }
+            pathRet = fs::path(pszHome);
+    }
 #ifdef MAC_OSX
     // Mac
     pathRet /= "Library/Application Support";
