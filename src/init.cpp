@@ -46,7 +46,7 @@ extern unsigned int nDerivationMethodIndex;
 extern unsigned int nMinerSleep;
 extern bool fUseFastIndex;
 
-int daemonPid = 0;
+static bool fMustRemovePidFile = true;
 
 //////////////////////////////////////////////////////////////////////////////
 //
@@ -99,7 +99,7 @@ void Shutdown(void* parg)
         StopNode();
         bitdb.Flush(true);
         StopRPCThreads();
-        if (daemonPid <= 0)
+        if (fMustRemovePidFile)
             boost::filesystem::remove(GetPidFile());
         UnregisterWallet(pwalletMain);
         delete pwalletMain;
@@ -602,7 +602,7 @@ bool AppInit2(ThreadHandlerPtr threads)
     if (fDaemon)
     {
         // Daemonize
-        pid_t pid = daemonPid = fork();
+        pid_t pid = fork();
         if (pid < 0)
         {
             fprintf(stderr, "Error: fork() returned %d errno %d\n", pid, errno);
@@ -611,6 +611,8 @@ bool AppInit2(ThreadHandlerPtr threads)
         if (pid > 0)
         {
             CreatePidFile(GetPidFile(), pid);
+
+            fMustRemovePidFile = false;
 
             // Now that we are forked we can request a shutdown so the parent
             // exits while the child lives on.
